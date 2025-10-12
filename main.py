@@ -25,8 +25,8 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
-    default_department = db.Column(db.String(100), nullable=True)
-    has_default_department = db.Column(db.Boolean, default=False)
+    default_location = db.Column(db.String(100), nullable=True)
+    has_default_location = db.Column(db.Boolean, default=False)
     bookings = db.relationship('Booking', backref='user', lazy=True)
 
 
@@ -34,11 +34,11 @@ class Workplace(db.Model):
     __tablename__ = 'workplaces'
     id = db.Column(db.Integer, primary_key=True)
     number = db.Column(db.Integer, nullable=False)
-    department = db.Column(db.String(100), nullable=False)
+    location = db.Column(db.String(100), nullable=False)
     bookings = db.relationship('Booking', backref='workplace', lazy=True)
 
     __table_args__ = (
-        db.UniqueConstraint('number', 'department', name='workplaces_number_department_key'),
+        db.UniqueConstraint('number', 'location', name='workplaces_number_location_key'),
     )
 
 
@@ -69,33 +69,33 @@ class UserManager:
         if user:
             self.current_user = username
             session['username'] = username
-            session['default_department'] = user.default_department
-            session['has_default_department'] = user.has_default_department
+            session['default_location'] = user.default_location
+            session['has_default_location'] = user.has_default_location
             return True
         return False
 
     def logout(self):
         self.current_user = None
         session.pop('username', None)
-        session.pop('default_department', None)
-        session.pop('has_default_department', None)
+        session.pop('default_location', None)
+        session.pop('has_default_location', None)
 
     def is_authenticated(self) -> bool:
         return self.current_user is not None
 
-    def set_default_department(self, username: str, department: str, save_as_default: bool) -> bool:
+    def set_default_location(self, username: str, location: str, save_as_default: bool) -> bool:
         user = User.query.filter_by(username=username).first()
         if user:
             if save_as_default:
-                user.default_department = department
-                user.has_default_department = True
+                user.default_location = location
+                user.has_default_location = True
             else:
-                user.default_department = None
-                user.has_default_department = False
+                user.default_location = None
+                user.has_default_location = False
 
             db.session.commit()
-            session['default_department'] = user.default_department
-            session['has_default_department'] = user.has_default_department
+            session['default_location'] = user.default_location
+            session['has_default_location'] = user.has_default_location
             return True
         return False
 
@@ -202,7 +202,7 @@ class OfficeBookingSystem:
             user_bookings.append({
                 'id': booking.id,
                 'place': workplace.number,
-                'department': workplace.department,
+                'location': workplace.location,
                 'start': booking.start_time.isoformat(),
                 'end': booking.end_time.isoformat(),
                 'start_dt': booking.start_time,
@@ -211,11 +211,11 @@ class OfficeBookingSystem:
             })
         return user_bookings
 
-    def get_available_places(self, department: str, dates: list, start_time: str, end_time: str) -> list:
+    def get_available_places(self, location: str, dates: list, start_time: str, end_time: str) -> list:
         available_places = []
 
-        # Получаем все места в отделе
-        workplaces = Workplace.query.filter_by(department=department).order_by(Workplace.number).all()
+        # Получаем все места в локации
+        workplaces = Workplace.query.filter_by(location=location).order_by(Workplace.number).all()
 
         for workplace in workplaces:
             is_available_for_all_dates = True
@@ -240,19 +240,36 @@ class OfficeBookingSystem:
 
         return available_places
 
-    def get_departments(self):
-        # Получаем уникальные отделы из базы данных
-        departments = db.session.query(Workplace.department).distinct().all()
-        return [dept[0] for dept in departments]
+    def get_locations(self):
+        # Получаем уникальные локации из базы данных
+        locations = db.session.query(Workplace.location).distinct().all()
+        return [loc[0] for loc in locations]
 
-    def get_department_places_count(self):
-        # Получаем количество мест для каждого отдела
-        departments = self.get_departments()
-        department_places = {}
-        for department in departments:
-            count = Workplace.query.filter_by(department=department).count()
-            department_places[department] = count
-        return department_places
+    def get_location_places_count(self):
+        # Получаем количество мест для каждой локации
+        locations = self.get_locations()
+        location_places = {}
+        for location in locations:
+            count = Workplace.query.filter_by(location=location).count()
+            location_places[location] = count
+        return location_places
+
+    def get_nearest_booking_date(self, user: str):
+        """Получить дату ближайшего бронирования пользователя"""
+        user_obj = User.query.filter_by(username=user).first()
+        if not user_obj:
+            return None
+
+        # Ищем ближайшее активное бронирование
+        now = datetime.now()
+        nearest_booking = Booking.query.join(Workplace).filter(
+            Booking.user_id == user_obj.id,
+            Booking.end_time > now
+        ).order_by(Booking.start_time.asc()).first()
+
+        if nearest_booking:
+            return nearest_booking.start_time.strftime('%d.%m.%Y')
+        return None
 
 
 # Инициализация систем
@@ -261,7 +278,7 @@ booking_system = OfficeBookingSystem()
 
 
 # Функции для аналитики
-def get_booking_stats(start_date=None, end_date=None, department=None):
+def get_booking_stats(start_date=None, end_date=None, location=None):
     """Получение статистики по бронированиям с корректной фильтрацией по датам"""
     query = Booking.query.join(User).join(Workplace)
 
@@ -273,19 +290,19 @@ def get_booking_stats(start_date=None, end_date=None, department=None):
         # Устанавливаем время окончания на 23:59:59 для включения всех броней по эту дату
         end_datetime = datetime.combine(end_date, datetime.max.time())
         query = query.filter(Booking.start_time <= end_datetime)
-    if department:
-        query = query.filter(Workplace.department == department)
+    if location:
+        query = query.filter(Workplace.location == location)
 
     bookings = query.all()
     return bookings
 
 
-def get_occupancy_percentage(start_date=None, end_date=None, department=None):
+def get_occupancy_percentage(start_date=None, end_date=None, location=None):
     """Расчет процента занятости как отношение всех броней к общему количеству возможных бронирований"""
 
-    # Получаем общее количество мест (всех или в конкретном отделе)
-    if department:
-        total_places = Workplace.query.filter_by(department=department).count()
+    # Получаем общее количество мест (всех или в конкретной локации)
+    if location:
+        total_places = Workplace.query.filter_by(location=location).count()
     else:
         total_places = Workplace.query.count()
 
@@ -315,8 +332,8 @@ def get_occupancy_percentage(start_date=None, end_date=None, department=None):
     if end_date:
         end_datetime = datetime.combine(end_date, datetime.max.time())
         query = query.filter(Booking.start_time <= end_datetime)
-    if department:
-        query = query.filter(Workplace.department == department)
+    if location:
+        query = query.filter(Workplace.location == location)
 
     # Считаем общее количество бронирований
     total_actual_bookings = query.count()
@@ -369,16 +386,16 @@ def get_day_statistics(bookings):
     return [{'day': day, 'count': count} for day, count in day_data.items()]
 
 
-def get_department_statistics(bookings):
-    """Статистика по отделам"""
-    dept_data = {}
+def get_location_statistics(bookings):
+    """Статистика по локациям"""
+    loc_data = {}
     for booking in bookings:
-        department = booking.workplace.department
-        if department not in dept_data:
-            dept_data[department] = 0
-        dept_data[department] += 1
+        location = booking.workplace.location
+        if location not in loc_data:
+            loc_data[location] = 0
+        loc_data[location] += 1
 
-    return [{'department': dept, 'count': count} for dept, count in dept_data.items()]
+    return [{'location': loc, 'count': count} for loc, count in loc_data.items()]
 
 
 def get_time_statistics(bookings):
@@ -392,199 +409,6 @@ def get_time_statistics(bookings):
             hours[hour_key] = hours.get(hour_key, 0) + 1
 
     return [{'hour': hour, 'count': count} for hour, count in hours.items()]
-
-
-def create_user_chart(user_stats):
-    """График топ пользователей по количеству бронирований"""
-    if not user_stats or sum(user['booking_count'] for user in user_stats) == 0:
-        fig = px.bar(title='Топ пользователей по количеству бронирований')
-        fig.add_annotation(text="Нет данных для выбранного периода",
-                           xref="paper", yref="paper",
-                           x=0.5, y=0.5, showarrow=False,
-                           font=dict(size=16))
-        fig.update_layout(
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            annotations=[]
-        )
-        return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-    # Берем только пользователей с ненулевыми бронированиями
-    top_users = [user for user in user_stats if user['booking_count'] > 0][:10]
-
-    if not top_users:
-        fig = px.bar(title='Топ пользователей по количеству бронирований')
-        fig.add_annotation(text="Нет данных для выбранного периода",
-                           xref="paper", yref="paper",
-                           x=0.5, y=0.5, showarrow=False,
-                           font=dict(size=16))
-        fig.update_layout(
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            annotations=[]
-        )
-        return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-    # Создаем данные для графика вручную
-    usernames = [user['username'] for user in top_users]
-    booking_counts = [user['booking_count'] for user in top_users]
-
-    fig = px.bar(
-        x=usernames,
-        y=booking_counts,
-        title='Топ пользователей по количеству бронирований',
-        labels={'x': 'Пользователь', 'y': 'Количество бронирований'}
-    )
-
-    # Русская локализация
-    fig.update_layout(
-        annotations=[],
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        showlegend=False
-    )
-
-    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-
-def create_day_chart(day_stats):
-    """График популярности дней недели"""
-    if not day_stats or sum(day['count'] for day in day_stats) == 0:
-        fig = px.bar(title='Распределение бронирований по дням недели')
-        fig.add_annotation(text="Нет данных для выбранного периода",
-                           xref="paper", yref="paper",
-                           x=0.5, y=0.5, showarrow=False,
-                           font=dict(size=16))
-        fig.update_layout(
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            annotations=[]
-        )
-        return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-    # Создаем данные для графика вручную
-    days_order = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
-
-    # Создаем словарь для всех дней недели
-    all_days = {day: 0 for day in days_order}
-
-    # Обновляем значения из статистики
-    for day_stat in day_stats:
-        if day_stat['day'] in all_days:
-            all_days[day_stat['day']] = day_stat['count']
-
-    # Создаем данные для графика
-    days = list(all_days.keys())
-    counts = list(all_days.values())
-
-    fig = px.bar(
-        x=days,
-        y=counts,
-        title='Распределение бронирований по дням недели',
-        labels={'x': 'День недели', 'y': 'Количество бронирований'}
-    )
-
-    # Русская локализация
-    fig.update_layout(
-        xaxis={'categoryorder': 'array', 'categoryarray': days_order},
-        annotations=[],
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        showlegend=False
-    )
-
-    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-
-def create_department_chart(department_stats):
-    """График популярности отделов"""
-    if not department_stats or sum(dept['count'] for dept in department_stats) == 0:
-        fig = px.pie(title='Распределение бронирований по отделам')
-        fig.add_annotation(text="Нет данных для выбранного периода",
-                           xref="paper", yref="paper",
-                           x=0.5, y=0.5, showarrow=False,
-                           font=dict(size=16))
-        fig.update_layout(
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            annotations=[]
-        )
-        return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-    # Фильтруем отделы с ненулевыми бронированиями
-    non_zero_stats = [dept for dept in department_stats if dept['count'] > 0]
-
-    if not non_zero_stats:
-        fig = px.pie(title='Распределение бронирований по отделам')
-        fig.add_annotation(text="Нет данных для выбранного периода",
-                           xref="paper", yref="paper",
-                           x=0.5, y=0.5, showarrow=False,
-                           font=dict(size=16))
-        fig.update_layout(
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            annotations=[]
-        )
-        return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-    # Создаем данные для графика вручную
-    departments = [dept['department'] for dept in non_zero_stats]
-    counts = [dept['count'] for dept in non_zero_stats]
-
-    fig = px.pie(
-        values=counts,
-        names=departments,
-        title='Распределение бронирований по отделам'
-    )
-
-    fig.update_layout(
-        annotations=[],
-        plot_bgcolor='white',
-        paper_bgcolor='white'
-    )
-
-    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-
-def create_time_chart(time_stats):
-    """График популярности времени"""
-    if not time_stats or sum(time['count'] for time in time_stats) == 0:
-        fig = px.line(title='Распределение бронирований по времени начала')
-        fig.add_annotation(text="Нет данных для выбранного периода",
-                           xref="paper", yref="paper",
-                           x=0.5, y=0.5, showarrow=False,
-                           font=dict(size=16))
-        fig.update_layout(
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            annotations=[]
-        )
-        return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-    # Создаем данные для графика вручную
-    hours = [time['hour'] for time in time_stats]
-    counts = [time['count'] for time in time_stats]
-
-    fig = px.line(
-        x=hours,
-        y=counts,
-        title='Распределение бронирований по времени начала',
-        labels={'x': 'Время начала', 'y': 'Количество бронирований'}
-    )
-
-    # Настройка отображения
-    fig.update_layout(
-        annotations=[],  # Удаляем все аннотации
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        showlegend=False,
-        xaxis=dict(
-            type='category',  # Чтобы время отображалось как категории, а не числовая ось
-            tickmode='linear'
-        )
-    )
-
-    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
 
 # Маршруты Flask
@@ -638,28 +462,32 @@ def dashboard():
         return redirect(url_for('login'))
 
     user_obj = User.query.filter_by(username=session['username']).first()
-    default_department = user_obj.default_department if user_obj and user_obj.has_default_department else None
-    has_default_department = user_obj.has_default_department if user_obj else False
+    default_location = user_obj.default_location if user_obj and user_obj.has_default_location else None
+    has_default_location = user_obj.has_default_location if user_obj else False
 
     filter_date = request.args.get('filter_date')
     user_bookings = booking_system.show_user_bookings(session['username'], filter_date=filter_date)
-    departments = booking_system.get_departments()
-    department_places = booking_system.get_department_places_count()
+    locations = booking_system.get_locations()
+    location_places = booking_system.get_location_places_count()
+
+    # Получаем дату ближайшего бронирования
+    nearest_booking_date = booking_system.get_nearest_booking_date(session['username'])
 
     return render_template(
         'dashboard.html',
         username=session['username'],
         bookings=user_bookings,
-        departments=departments,
-        default_department=default_department,
-        has_default_department=has_default_department,
+        locations=locations,
+        default_location=default_location,
+        has_default_location=has_default_location,
         working_hours=booking_system.working_hours,
         today=datetime.now().strftime('%d.%m.%Y'),
         min_date=datetime.now().strftime('%Y-%m-%d'),
         max_date=(datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'),
         now=datetime.now(),
         filter_date=filter_date,
-        department_places=department_places
+        location_places=location_places,
+        nearest_booking_date=nearest_booking_date
     )
 
 
@@ -669,15 +497,15 @@ def get_available_places():
         return jsonify({'error': 'Not authenticated'}), 401
 
     data = request.get_json()
-    department = data.get('department')
+    location = data.get('location')
     dates = data.get('dates', [])
     start_time = data.get('start_time')
     end_time = data.get('end_time')
 
-    if not department or not dates or not start_time or not end_time:
+    if not location or not dates or not start_time or not end_time:
         return jsonify({'error': 'Missing parameters'}), 400
 
-    available_places = booking_system.get_available_places(department, dates, start_time, end_time)
+    available_places = booking_system.get_available_places(location, dates, start_time, end_time)
     return jsonify({'available_places': available_places})
 
 
@@ -714,8 +542,8 @@ def cancel(booking_id):
 @app.route('/schedule')
 def schedule():
     selected_date_str = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
-    view_type = request.args.get('view', 'day')
-    department_filter = request.args.get('department', 'all')
+    view_type = request.args.get('view', 'week')
+    location_filter = request.args.get('location', 'all')
 
     try:
         selected_date = datetime.strptime(selected_date_str, '%Y-%m-%d').date()
@@ -732,8 +560,8 @@ def schedule():
 
     query = db.session.query(Booking, Workplace, User).join(Workplace).join(User)
 
-    if department_filter != 'all':
-        query = query.filter(Workplace.department == department_filter)
+    if location_filter != 'all':
+        query = query.filter(Workplace.location == location_filter)
 
     bookings_data = query.order_by(Booking.start_time).all()
 
@@ -743,12 +571,12 @@ def schedule():
         if date_str not in schedule_data:
             schedule_data[date_str] = {}
 
-        place_key = f"{workplace.department} - {workplace.number}"
+        place_key = f"{workplace.location} - {workplace.number}"
         schedule_data[date_str][place_key] = {
             'user': user.username,
             'start': booking.start_time.time().isoformat(),
             'end': booking.end_time.time().isoformat(),
-            'department': workplace.department
+            'location': workplace.location
         }
 
     if view_type == 'week':
@@ -765,8 +593,8 @@ def schedule():
     else:
         week_days = None
 
-    departments = booking_system.get_departments()
-    department_places = booking_system.get_department_places_count()
+    locations = booking_system.get_locations()
+    location_places = booking_system.get_location_places_count()
 
     return render_template('schedule.html',
                            schedule=schedule_data,
@@ -779,30 +607,30 @@ def schedule():
                            week_days=week_days,
                            min_date=datetime.now().strftime('%Y-%m-%d'),
                            max_date=(datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'),
-                           departments=departments,
-                           department_filter=department_filter,
-                           department_places=department_places)
+                           locations=locations,
+                           location_filter=location_filter,
+                           location_places=location_places)
 
 
-@app.route('/save_default_department', methods=['POST'])
-def save_default_department():
+@app.route('/save_default_location', methods=['POST'])
+def save_default_location():
     if 'username' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
 
     data = request.get_json()
-    department = data.get('department')
+    location = data.get('location')
     save_as_default = data.get('save_as_default', False)
 
-    if not department and save_as_default:
-        return jsonify({'error': 'Missing department parameter'}), 400
+    if not location and save_as_default:
+        return jsonify({'error': 'Missing location parameter'}), 400
 
-    if user_manager.set_default_department(session['username'], department, save_as_default):
+    if user_manager.set_default_location(session['username'], location, save_as_default):
         if save_as_default:
-            return jsonify({'success': True, 'message': 'Отдел сохранен по умолчанию'})
+            return jsonify({'success': True, 'message': 'Локация сохранена по умолчанию'})
         else:
-            return jsonify({'success': True, 'message': 'Отдел по умолчанию удален'})
+            return jsonify({'success': True, 'message': 'Локация по умолчанию удалена'})
 
-    return jsonify({'error': 'Failed to save default department'}), 400
+    return jsonify({'error': 'Failed to save default location'}), 400
 
 
 @app.route('/analytics')
@@ -817,49 +645,39 @@ def analytics_dashboard():
 
     start_date = request.args.get('start_date', default_start.strftime('%Y-%m-%d'))
     end_date = request.args.get('end_date', default_end.strftime('%Y-%m-%d'))
-    department_filter = request.args.get('department', '')
+    location_filter = request.args.get('location', '')
 
-    # Если отдел не выбран, используем отдел по умолчанию из сессии
-    if not department_filter and session.get('default_department'):
-        department_filter = session['default_department']
+    # Если локация не выбрана, используем локацию по умолчанию из сессии
+    if not location_filter and session.get('default_location'):
+        location_filter = session['default_location']
 
     # Преобразуем даты
     start_dt = datetime.strptime(start_date, '%Y-%m-%d').date() if start_date else default_start.date()
     end_dt = datetime.strptime(end_date, '%Y-%m-%d').date() if end_date else default_end.date()
 
-    # Получаем данные с учетом фильтра по отделу
-    bookings = get_booking_stats(start_dt, end_dt, department_filter)
+    # Получаем данные с учетом фильтра по локации
+    bookings = get_booking_stats(start_dt, end_dt, location_filter)
 
     # Рассчитываем процент занятости
-    occupancy_percentage = get_occupancy_percentage(start_dt, end_dt, department_filter)
+    occupancy_percentage = get_occupancy_percentage(start_dt, end_dt, location_filter)
 
-    # Подготавливаем данные для графиков
+    # Подготавливаем данные для статистики
     user_stats = get_user_statistics(bookings)
     day_stats = get_day_statistics(bookings)
-    department_stats = get_department_statistics(bookings)
+    location_stats = get_location_statistics(bookings)
     time_stats = get_time_statistics(bookings)
 
-    # Создаем графики
-    user_chart = create_user_chart(user_stats)
-    day_chart = create_day_chart(day_stats)
-    department_chart = create_department_chart(department_stats)
-    time_chart = create_time_chart(time_stats)
-
-    departments = booking_system.get_departments()
+    locations = booking_system.get_locations()
 
     return render_template('analytics.html',
                            user_stats=user_stats,
                            day_stats=day_stats,
-                           department_stats=department_stats,
+                           location_stats=location_stats,
                            time_stats=time_stats,
-                           user_chart=user_chart,
-                           day_chart=day_chart,
-                           department_chart=department_chart,
-                           time_chart=time_chart,
                            start_date=start_date,
                            end_date=end_date,
-                           departments=departments,
-                           department_filter=department_filter,
+                           locations=locations,
+                           location_filter=location_filter,
                            occupancy_percentage=occupancy_percentage,
                            total_bookings=len(bookings))
 
@@ -872,12 +690,12 @@ def export_analytics():
 
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
-    department_filter = request.args.get('department', '')
+    location_filter = request.args.get('location', '')
 
     start_dt = datetime.strptime(start_date, '%Y-%m-%d').date() if start_date else None
     end_dt = datetime.strptime(end_date, '%Y-%m-%d').date() if end_date else None
 
-    bookings = get_booking_stats(start_dt, end_dt, department_filter)
+    bookings = get_booking_stats(start_dt, end_dt, location_filter)
 
     # Создаем Excel файл в памяти
     output = BytesIO()
@@ -905,21 +723,21 @@ def export_analytics():
         })
         df_days.to_excel(writer, sheet_name='Статистика по дням недели', index=False)
 
-        # Лист с отделами
-        dept_stats = get_department_statistics(bookings)
-        df_dept = pd.DataFrame(dept_stats)
-        df_dept = df_dept.rename(columns={
-            'department': 'Отдел',
+        # Лист с локациями
+        loc_stats = get_location_statistics(bookings)
+        df_loc = pd.DataFrame(loc_stats)
+        df_loc = df_loc.rename(columns={
+            'location': 'Локация',
             'count': 'Количество бронирований'
         })
-        df_dept.to_excel(writer, sheet_name='Статистика по отделам', index=False)
+        df_loc.to_excel(writer, sheet_name='Статистика по локациям', index=False)
 
         # Детализация бронирований
         booking_data = []
         for booking in bookings:
             booking_data.append({
                 'Пользователь': booking.user.username,
-                'Отдел': booking.workplace.department,
+                'Локация': booking.workplace.location,
                 'Место': booking.workplace.number,
                 'Дата начала': booking.start_time.strftime('%d.%m.%Y'),
                 'Время начала': booking.start_time.strftime('%H:%M'),

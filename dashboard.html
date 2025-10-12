@@ -22,7 +22,7 @@
 
 <!-- Статистика -->
 <div class="row mb-4">
-    <div class="col-md-4 mb-3" data-aos="fade-up" data-aos-delay="100">
+    <div class="col-md-3 mb-3" data-aos="fade-up" data-aos-delay="100">
         <div class="stat-card">
             <div class="stat-number">{{ bookings|length }}</div>
             <div class="stat-label">Активных бронирований</div>
@@ -31,21 +31,30 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4 mb-3" data-aos="fade-up" data-aos-delay="200">
+    <div class="col-md-3 mb-3" data-aos="fade-up" data-aos-delay="200">
         <div class="stat-card">
-            <div class="stat-number">{{ departments|length }}</div>
-            <div class="stat-label">Доступных отделов</div>
+            <div class="stat-number">{{ locations|length }}</div>
+            <div class="stat-label">Доступных локаций</div>
             <div class="mt-3">
                 <i class="bi bi-buildings text-primary" style="font-size: 2rem;"></i>
             </div>
         </div>
     </div>
-    <div class="col-md-4 mb-3" data-aos="fade-up" data-aos-delay="300">
+    <div class="col-md-3 mb-3" data-aos="fade-up" data-aos-delay="300">
         <div class="stat-card">
             <div class="stat-number">{{ today }}</div>
             <div class="stat-label">Сегодняшняя дата</div>
             <div class="mt-3">
                 <i class="bi bi-calendar-day text-primary" style="font-size: 2rem;"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3" data-aos="fade-up" data-aos-delay="400">
+        <div class="stat-card">
+            <div class="stat-number">{{ nearest_booking_date if nearest_booking_date else 'Нет' }}</div>
+            <div class="stat-label">Ближайшее бронирование</div>
+            <div class="mt-3">
+                <i class="bi bi-calendar-event text-primary" style="font-size: 2rem;"></i>
             </div>
         </div>
     </div>
@@ -64,28 +73,28 @@
                     <input type="hidden" name="place_id" id="selected-place-id">
 
                     <div class="mb-4">
-                        <label class="form-label fw-semibold">Выберите отдел</label>
+                        <label class="form-label fw-semibold">Выберите локацию</label>
                         <div class="d-flex align-items-center gap-2">
-                            <select class="form-select flex-grow-1" id="department-select" required>
-                                <option value="" disabled {% if not has_default_department %}selected{% endif %}>Выберите отдел</option>
-                                {% for department in departments %}
-                                    <option value="{{ department }}"
-                                        {% if has_default_department and department == default_department %}selected{% endif %}>
-                                        {{ department }}
+                            <select class="form-select flex-grow-1" id="location-select" required>
+                                <option value="" disabled {% if not has_default_location %}selected{% endif %}>Выберите локацию</option>
+                                {% for location in locations %}
+                                    <option value="{{ location }}"
+                                        {% if has_default_location and location == default_location %}selected{% endif %}>
+                                        {{ location }}
                                     </option>
                                 {% endfor %}
                             </select>
                         </div>
                         <div class="form-check mt-2">
                             <input class="form-check-input" type="checkbox" id="save-as-default"
-                                   {% if has_default_department %}checked{% endif %}>
+                                   {% if has_default_location %}checked{% endif %}>
                             <label class="form-check-label" for="save-as-default">
-                                Использовать как отдел по умолчанию
+                                Использовать как локацию по умолчанию
                             </label>
                         </div>
-                        {% if has_default_department %}
+                        {% if has_default_location %}
                         <div class="form-text">
-                            <i class="bi bi-info-circle me-1"></i> Ваш отдел по умолчанию: <strong>{{ default_department }}</strong>
+                            <i class="bi bi-info-circle me-1"></i> Ваша локация по умолчанию: <strong>{{ default_location }}</strong>
                         </div>
                         {% endif %}
                     </div>
@@ -100,7 +109,7 @@
                                            min="08:00" max="18:00" step="900"
                                            value="08:00" required>
                                 </div>
-                                <div class="form-text">Начало работы</div>
+                                <div class="form-text">Начало работы (только :00, :15, :30, :45)</div>
                             </div>
                             <div class="col-md-6">
                                 <div class="input-group">
@@ -109,7 +118,7 @@
                                            min="08:00" max="18:00" step="900"
                                            value="18:00" required>
                                 </div>
-                                <div class="form-text">Окончание работы</div>
+                                <div class="form-text">Окончание работы (только :00, :15, :30, :45)</div>
                             </div>
                         </div>
                     </div>
@@ -166,7 +175,7 @@
 
                     <!-- Контейнер для отображения доступных места -->
                     <div id="available-places-container" class="mt-4" style="display: none;">
-                        <h5><i class="bi bi-grid me-2"></i>Доступные места в отделе <span id="selected-department-name"></span>:</h5>
+                        <h5><i class="bi bi-grid me-2"></i>Доступные места в локации <span id="selected-location-name"></span>:</h5>
                         <p class="text-muted" id="selected-time-range"></p>
 
                         <div class="d-flex flex-wrap gap-2 mt-3" id="available-places">
@@ -227,7 +236,7 @@
                                 <div class="flex-grow-1">
                                     <h5 class="mb-1"><i class="bi bi-geo-alt me-2"></i>Место {{ booking.place }}</h5>
                                     <span class="text-muted small">
-                                        <i class="bi bi-building me-1"></i>{{ booking.department }}
+                                        <i class="bi bi-building me-1"></i>{{ booking.location }}
                                     </span>
                                     <div class="mt-2">
                                         <span class="fw-bold text-primary fs-6">{{ booking.start_dt.strftime('%d.%m.%Y') }}</span>
@@ -290,10 +299,10 @@
                             <i class="bi bi-building text-white"></i>
                         </div>
                         <div>
-                            <strong>Доступные отделы</strong>
+                            <strong>Доступные локации</strong>
                             <div class="text-muted">
-                                {% for department in departments %}
-                                    <span class="badge bg-light text-dark me-1 mb-1">{{ department }}</span>
+                                {% for location in locations %}
+                                    <span class="badge bg-light text-dark me-1 mb-1">{{ location }}</span>
                                 {% endfor %}
                             </div>
                         </div>
@@ -303,12 +312,12 @@
                             <i class="bi bi-star text-white"></i>
                         </div>
                         <div>
-                            <strong>Отдел по умолчанию</strong>
+                            <strong>Локация по умолчанию</strong>
                             <div class="text-muted">
-                                {% if has_default_department %}
-                                    <span class="badge bg-success">{{ default_department }}</span>
+                                {% if has_default_location %}
+                                    <span class="badge bg-success">{{ default_location }}</span>
                                 {% else %}
-                                    <span class="text-muted">Не установлен</span>
+                                    <span class="text-muted">Не установлена</span>
                                 {% endif %}
                             </div>
                         </div>
@@ -321,12 +330,12 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Динамическое определение максимального количества мест для отделов
-        const departmentMaxPlaces = {{ department_places | tojson }};
+        // Динамическое определение максимального количества мест для локаций
+        const locationMaxPlaces = {{ location_places | tojson }};
 
         // Универсальная функция для получения максимального количества мест
-        function getMaxPlacesForDepartment(department) {
-            return departmentMaxPlaces[department] || 10;
+        function getMaxPlacesForLocation(location) {
+            return locationMaxPlaces[location] || 10;
         }
 
         // Флаг для отслеживания инициализации
@@ -498,13 +507,13 @@
 
         // Функция для проверки доступности мест
         function checkAvailability() {
-            const department = document.getElementById('department-select').value;
+            const location = document.getElementById('location-select').value;
             const selectedDates = window.fp ? window.fp.selectedDates : [];
             const startTime = document.getElementById('start-time').value;
             const endTime = document.getElementById('end-time').value;
 
-            if (!department) {
-                alert('Пожалуйста, выберите отдел');
+            if (!location) {
+                alert('Пожалуйста, выберите локацию');
                 return;
             }
 
@@ -518,10 +527,10 @@
                 return;
             }
 
-            // Получаем название выбранного отдела
-            const departmentSelect = document.getElementById('department-select');
-            const selectedDepartmentName = departmentSelect.options[departmentSelect.selectedIndex].text;
-            document.getElementById('selected-department-name').textContent = selectedDepartmentName;
+            // Получаем название выбранной локации
+            const locationSelect = document.getElementById('location-select');
+            const selectedLocationName = locationSelect.options[locationSelect.selectedIndex].text;
+            document.getElementById('selected-location-name').textContent = selectedLocationName;
 
             // Форматируем даты для отправки
             const dates = selectedDates.map(date => window.formatDate(date));
@@ -548,7 +557,7 @@
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    department: department,
+                    location: location,
                     dates: dates,
                     start_time: startTime,
                     end_time: endTime
@@ -574,13 +583,13 @@
             const container = document.getElementById('available-places');
             container.innerHTML = '';
 
-            // Получаем выбранный отдел
-            const departmentSelect = document.getElementById('department-select');
-            const selectedDepartment = departmentSelect.options[departmentSelect.selectedIndex].text;
-            const maxPlaces = getMaxPlacesForDepartment(selectedDepartment);
+            // Получаем выбранную локацию
+            const locationSelect = document.getElementById('location-select');
+            const selectedLocation = locationSelect.options[locationSelect.selectedIndex].text;
+            const maxPlaces = getMaxPlacesForLocation(selectedLocation);
 
             if (!maxPlaces) {
-                container.innerHTML = '<div class="alert alert-warning w-100">Неизвестный отдел</div>';
+                container.innerHTML = '<div class="alert alert-warning w-100">Неизвестная локация</div>';
                 return;
             }
 
@@ -657,25 +666,25 @@
             }, 5000);
         }
 
-        // Обработчик для чекбокса "Использовать как отдел по умолчанию"
+        // Обработчик для чекбокса "Использовать как локацию по умолчанию"
         document.getElementById('save-as-default').addEventListener('change', function() {
-            const department = document.getElementById('department-select').value;
+            const location = document.getElementById('location-select').value;
             const saveAsDefault = this.checked;
 
-            if (saveAsDefault && !department) {
-                showFlashMessage('Пожалуйста, выберите отдел для сохранения', 'warning');
+            if (saveAsDefault && !location) {
+                showFlashMessage('Пожалуйста, выберите локацию для сохранения', 'warning');
                 this.checked = false;
                 return;
             }
 
             // Отправляем запрос на сервер
-            fetch('/save_default_department', {
+            fetch('/save_default_location', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    department: department,
+                    location: location,
                     save_as_default: saveAsDefault
                 })
             })
@@ -684,11 +693,11 @@
                 if (data.success) {
                     showFlashMessage(data.message, 'success');
 
-                    // Обновляем информацию о отделе по умолчанию на странице
+                    // Обновляем информацию о локации по умолчанию на странице
                     if (saveAsDefault) {
-                        // Добавляем или обновляем информацию о отделе по умолчанию
-                        let defaultDeptInfo = document.querySelector('.list-group-item:last-child .text-muted');
-                        if (!defaultDeptInfo) {
+                        // Добавляем или обновляем информацию о локации по умолчанию
+                        let defaultLocInfo = document.querySelector('.list-group-item:last-child .text-muted');
+                        if (!defaultLocInfo) {
                             // Создаем элемент, если его нет
                             const infoItem = document.createElement('li');
                             infoItem.className = 'list-group-item d-flex align-items-center';
@@ -697,21 +706,21 @@
                                     <i class="bi bi-star text-white"></i>
                                 </div>
                                 <div>
-                                    <strong>Отдел по умолчанию</strong>
+                                    <strong>Локация по умолчанию</strong>
                                     <div class="text-muted">
-                                        <span class="badge bg-success">${department}</span>
+                                        <span class="badge bg-success">${location}</span>
                                     </div>
                                 </div>
                             `;
                             document.querySelector('.list-group').appendChild(infoItem);
                         } else {
-                            defaultDeptInfo.innerHTML = `<span class="badge bg-success">${department}</span>`;
+                            defaultLocInfo.innerHTML = `<span class="badge bg-success">${location}</span>`;
                         }
                     } else {
-                        // Удаляем информацию о отделе по умолчанию
-                        const defaultDeptInfo = document.querySelector('.list-group-item:last-child .text-muted');
-                        if (defaultDeptInfo) {
-                            defaultDeptInfo.innerHTML = '<span class="text-muted">Не установлен</span>';
+                        // Удаляем информацию о локации по умолчанию
+                        const defaultLocInfo = document.querySelector('.list-group-item:last-child .text-muted');
+                        if (defaultLocInfo) {
+                            defaultLocInfo.innerHTML = '<span class="text-muted">Не установлена</span>';
                         }
                     }
                 } else {
@@ -721,35 +730,35 @@
             })
             .catch(error => {
                 console.error('Error:', error);
-                showFlashMessage('Произошла ошибка при сохранении отдела', 'error');
+                showFlashMessage('Произошла ошибка при сохранении локации', 'error');
                 this.checked = !saveAsDefault; // Возвращаем предыдущее состояние
             });
         });
 
-        // Обработчик изменения выбора отдела
-        document.getElementById('department-select').addEventListener('change', function() {
-            const department = this.value;
+        // Обработчик изменения выбора локации
+        document.getElementById('location-select').addEventListener('change', function() {
+            const location = this.value;
             const saveAsDefaultCheckbox = document.getElementById('save-as-default');
 
-            // Если выбран отдел и чекбокс отмечен, обновляем отдел по умолчанию
-            if (department && saveAsDefaultCheckbox.checked) {
-                fetch('/save_default_department', {
+            // Если выбрана локация и чекбокс отмечен, обновляем локацию по умолчанию
+            if (location && saveAsDefaultCheckbox.checked) {
+                fetch('/save_default_location', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        department: department,
+                        location: location,
                         save_as_default: true
                     })
                 })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        // Обновляем информацию о отделе по умолчанию на странице
-                        const defaultDeptInfo = document.querySelector('.list-group-item:last-child .text-muted');
-                        if (defaultDeptInfo) {
-                            defaultDeptInfo.innerHTML = `<span class="badge bg-success">${department}</span>`;
+                        // Обновляем информацию о локации по умолчанию на странице
+                        const defaultLocInfo = document.querySelector('.list-group-item:last-child .text-muted');
+                        if (defaultLocInfo) {
+                            defaultLocInfo.innerHTML = `<span class="badge bg-success">${location}</span>`;
                         }
                     }
                 })

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OfficeSpace - система бронирования рабочих мест</title>
+    <title>Pixel Place - система бронирования рабочих мест</title>
     <!-- Plotly для графиков -->
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <!-- Bootstrap 5 CSS -->
@@ -700,7 +700,7 @@
             <div class="container-fluid">
                 <a class="navbar-brand" href="/">
                     <i class="bi bi-building me-2"></i>
-                    Office<span>Space</span>
+                    Pixel<span>Place</span>
                 </a>
                 <div class="d-flex">
                     {% if 'username' in session %}
@@ -731,7 +731,7 @@
         {% block content %}{% endblock %}
 
         <div class="footer">
-            <p>© 2025 OfficeSpace - система бронирования рабочих мест. Все права защищены.</p>
+            <p>© 2025 Pixel Place - система бронирования рабочих мест. Все права защищены.</p>
         </div>
     </div>
 
@@ -754,13 +754,56 @@
         });
 
         document.addEventListener('DOMContentLoaded', function() {
-            // Инициализация времени
-            const timeInputs = document.querySelectorAll('input[type="time"]');
-            timeInputs.forEach(input => {
-                input.min = "08:00";
-                input.max = "18:00";
-                input.step = 900; // 15 минут
-            });
+            // Функция для ограничения выбора времени только 15-минутными интервалами
+            function setupTimeInputs() {
+                const timeInputs = document.querySelectorAll('input[type="time"]');
+                timeInputs.forEach(input => {
+                    // Устанавливаем шаг 15 минут
+                    input.step = 900;
+
+                    // Обработчик изменения значения
+                    input.addEventListener('change', function() {
+                        const time = this.value;
+                        if (time) {
+                            const [hours, minutes] = time.split(':').map(Number);
+                            // Округляем минуты до ближайших 15 минут
+                            const roundedMinutes = Math.round(minutes / 15) * 15;
+                            let finalHours = hours;
+                            let finalMinutes = roundedMinutes;
+
+                            // Если минуты равны 60, переходим к следующему часу
+                            if (finalMinutes === 60) {
+                                finalHours += 1;
+                                finalMinutes = 0;
+                            }
+
+                            // Форматируем обратно в строку
+                            const formattedTime =
+                                `${finalHours.toString().padStart(2, '0')}:${finalMinutes.toString().padStart(2, '0')}`;
+
+                            // Устанавливаем исправленное значение
+                            this.value = formattedTime;
+                        }
+                    });
+
+                    // Обработчик ввода для предотвращения невалидных значений
+                    input.addEventListener('input', function() {
+                        const time = this.value;
+                        if (time) {
+                            const [hours, minutes] = time.split(':').map(Number);
+                            if (minutes % 15 !== 0) {
+                                // Показываем подсказку пользователю
+                                this.setCustomValidity('Пожалуйста, выберите время с интервалом в 15 минут (00, 15, 30, 45)');
+                            } else {
+                                this.setCustomValidity('');
+                            }
+                        }
+                    });
+                });
+            }
+
+            // Инициализация времени с ограничением 15-минутных интервалов
+            setupTimeInputs();
 
             // Инициализация flatpickr
             flatpickr.localize(flatpickr.l10ns.ru);

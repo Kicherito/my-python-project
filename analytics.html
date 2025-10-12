@@ -3,50 +3,56 @@
 {% block content %}
 <div class="container-fluid">
     <!-- Заголовок и фильтры -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h2 mb-1">Аналитика бронирований</h1>
-            <p class="text-muted">Статистика использования рабочих мест</p>
-        </div>
-        <div class="d-flex gap-2">
-            <form method="GET" class="d-flex gap-2">
-                <div class="input-group">
-                    <span class="input-group-text">С</span>
-                    <input type="date" class="form-control" name="start_date" value="{{ start_date }}">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div>
+                            <h1 class="h2 mb-1">Аналитика бронирований</h1>
+                            <p class="text-muted">Статистика использования рабочих мест</p>
+                        </div>
+                        <a href="{{ url_for('export_analytics', start_date=start_date, end_date=end_date, location=location_filter) }}"
+                           class="btn btn-success">
+                            <i class="bi bi-download me-2"></i>Экспорт в Excel
+                        </a>
+                    </div>
+
+                    <form method="GET" class="row g-3 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label">Начальная дата</label>
+                            <input type="date" class="form-control" name="start_date" value="{{ start_date }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Конечная дата</label>
+                            <input type="date" class="form-control" name="end_date" value="{{ end_date }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Локация</label>
+                            <select class="form-select" name="location">
+                                <option value="">Все локации</option>
+                                {% for location in locations %}
+                                    <option value="{{ location }}"
+                                        {% if location == location_filter %}selected{% endif %}>
+                                        {{ location }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-primary w-100">Применить</button>
+                        </div>
+                    </form>
+
+                    {% if location_filter %}
+                    <div class="mt-3">
+                        <button type="button" id="save-default-location" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-star me-1"></i> Сохранить локацию по умолчанию
+                        </button>
+                    </div>
+                    {% endif %}
                 </div>
-                <div class="input-group">
-                    <span class="input-group-text">По</span>
-                    <input type="date" class="form-control" name="end_date" value="{{ end_date }}">
-                </div>
-
-                <!-- Выбор отдела -->
-                <div class="input-group">
-                    <span class="input-group-text">Отдел</span>
-                    <select class="form-select" name="department">
-                        <option value="">Все отделы</option>
-                        {% for department in departments %}
-                            <option value="{{ department }}"
-                                {% if department == department_filter %}selected{% endif %}>
-                                {{ department }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <button type="submit" class="btn btn-primary">Применить</button>
-            </form>
-
-            <!-- Кнопка сохранения отдела по умолчанию -->
-            {% if department_filter %}
-            <button type="button" id="save-default-department" class="btn btn-outline-secondary">
-                <i class="bi bi-star me-1"></i> Сохранить отдел по умолчанию
-            </button>
-            {% endif %}
-
-            <a href="{{ url_for('export_analytics', start_date=start_date, end_date=end_date, department=department_filter) }}"
-               class="btn btn-success">
-                <i class="bi bi-download me-2"></i>Экспорт в Excel
-            </a>
+            </div>
         </div>
     </div>
 
@@ -62,8 +68,8 @@
             <div class="stat-card">
                 <div class="stat-number">{{ occupancy_percentage }}%</div>
                 <div class="stat-label">Процент занятости</div>
-                {% if department_filter %}
-                    <div class="stat-small">в отделе {{ department_filter }}</div>
+                {% if location_filter %}
+                    <div class="stat-small">в локации {{ location_filter }}</div>
                 {% endif %}
             </div>
         </div>
@@ -82,102 +88,129 @@
         </div>
     </div>
 
-    <!-- Графики -->
+    <!-- Статистика по локациям -->
     <div class="row mb-4">
-        <div class="col-lg-6 mb-4">
-            <div class="card h-100">
+        <div class="col-12">
+            <div class="card">
                 <div class="card-header">
-                    <i class="bi bi-bar-chart me-2"></i>Топ пользователей
+                    <i class="bi bi-building me-2"></i>Статистика по локациям
                 </div>
                 <div class="card-body">
-                    {% if user_chart %}
-                        <div id="user-chart"></div>
-                    {% else %}
-                        <p class="text-muted text-center py-4">Нет данных для отображения</p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-6 mb-4">
-            <div class="card h-100">
-                <div class="card-header">
-                    <i class="bi bi-pie-chart me-2"></i>Распределение по отделам
-                </div>
-                <div class="card-body">
-                    {% if department_chart %}
-                        <div id="department-chart"></div>
-                    {% else %}
-                        <p class="text-muted text-center py-4">Нет данных для отображения</p>
-                    {% endif %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Локация</th>
+                                    <th>Количество бронирований</th>
+                                    <th>Процент от общего числа</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for location in location_stats %}
+                                <tr>
+                                    <td class="fw-bold">{{ location.location }}</td>
+                                    <td>{{ location.count }}</td>
+                                    <td>
+                                        {% if total_bookings > 0 %}
+                                            {{ "%.1f"|format((location.count / total_bookings) * 100) }}%
+                                        {% else %}
+                                            0%
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="3" class="text-center text-muted py-4">Нет данных за выбранный период</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Статистика по дням недели -->
     <div class="row mb-4">
-        <div class="col-lg-6 mb-4">
-            <div class="card h-100">
+        <div class="col-12">
+            <div class="card">
                 <div class="card-header">
-                    <i class="bi bi-calendar-week me-2"></i>Бронирования по дням недели
+                    <i class="bi bi-calendar-week me-2"></i>Статистика по дням недели
                 </div>
                 <div class="card-body">
-                    {% if day_chart %}
-                        <div id="day-chart"></div>
-                    {% else %}
-                        <p class="text-muted text-center py-4">Нет данных для отображения</p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-6 mb-4">
-            <div class="card h-100">
-                <div class="card-header">
-                    <i class="bi bi-clock me-2"></i>Бронирования по времени начала
-                </div>
-                <div class="card-body">
-                    {% if time_chart %}
-                        <div id="time-chart"></div>
-                    {% else %}
-                        <p class="text-muted text-center py-4">Нет данных для отображения</p>
-                    {% endif %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>День недели</th>
+                                    <th>Количество бронирований</th>
+                                    <th>Процент от общего числа</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for day in day_stats %}
+                                <tr>
+                                    <td class="fw-bold">{{ day.day }}</td>
+                                    <td>{{ day.count }}</td>
+                                    <td>
+                                        {% if total_bookings > 0 %}
+                                            {{ "%.1f"|format((day.count / total_bookings) * 100) }}%
+                                        {% else %}
+                                            0%
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="3" class="text-center text-muted py-4">Нет данных за выбранный период</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Таблица пользователей -->
-    <div class="card">
-        <div class="card-header">
-            <i class="bi bi-people me-2"></i>Детальная статистика по пользователям
-        </div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th>Пользователь</th>
-                            <th>Кол-во бронирований</th>
-                            <th>Всего часов</th>
-                            <th>Средняя длительность</th>
-                            <th>Последнее бронирование</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for user in user_stats %}
-                        <tr>
-                            <td class="fw-bold">{{ user.username }}</td>
-                            <td>{{ user.booking_count }}</td>
-                            <td>{{ user.total_hours }} ч</td>
-                            <td>{{ user.avg_duration }} ч</td>
-                            <td>{{ user.last_booking }}</td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="5" class="text-center text-muted py-4">Нет данных за выбранный период</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-people me-2"></i>Детальная статистика по пользователям
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Пользователь</th>
+                                    <th>Кол-во бронирований</th>
+                                    <th>Всего часов</th>
+                                    <th>Средняя длительность</th>
+                                    <th>Последнее бронирование</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user in user_stats %}
+                                <tr>
+                                    <td class="fw-bold">{{ user.username }}</td>
+                                    <td>{{ user.booking_count }}</td>
+                                    <td>{{ user.total_hours }} ч</td>
+                                    <td>{{ user.avg_duration }} ч</td>
+                                    <td>{{ user.last_booking }}</td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted py-4">Нет данных за выбранный период</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -186,142 +219,40 @@
 
 {% block scripts %}
 <script>
-    // Дополнительный скрипт для удаления кнопки "Produced with Plotly" и ненужных кнопок
-    function removePlotlyButton() {
-        const plotlyButtons = document.querySelectorAll('.modebar-container a[data-title="Produced with Plotly"]');
-        plotlyButtons.forEach(button => {
-            button.style.display = 'none';
-        });
-
-        // Альтернативный поиск по тексту
-        const allButtons = document.querySelectorAll('.modebar-container a');
-        allButtons.forEach(button => {
-            if (button.textContent.includes('Produced with Plotly') ||
-                button.getAttribute('data-title') === 'Produced with Plotly') {
-                button.remove();
-            }
-        });
-
-        // Удаляем ненужные кнопки
-        const unwantedButtons = ['toggleSpikelines', 'hoverClosestCartesian', 'hoverCompareCartesian'];
-        unwantedButtons.forEach(btnClass => {
-            const buttons = document.querySelectorAll(`.modebar-btn[data-val="${btnClass}"]`);
-            buttons.forEach(btn => btn.remove());
-        });
-
-        // Русская локализация значков
-        const modebarButtons = document.querySelectorAll('.modebar-btn');
-        modebarButtons.forEach(btn => {
-            const title = btn.getAttribute('data-title');
-            if (title) {
-                const russianTitles = {
-                    'Zoom': 'Приблизить',
-                    'Pan': 'Перемещать',
-                    'Box Select': 'Выделение прямоугольником',
-                    'Lasso Select': 'Лассо выделение',
-                    'Zoom in': 'Приблизить',
-                    'Zoom out': 'Отдалить',
-                    'Autoscale': 'Автоматическое масштабирование',
-                    'Reset axes': 'Сбросить оси',
-                    'Download plot as a png': 'Скачать график как PNG'
-                };
-                if (russianTitles[title]) {
-                    btn.setAttribute('data-title', russianTitles[title]);
-                }
-            }
-        });
-    }
-
-    // Инициализация графиков
     document.addEventListener('DOMContentLoaded', function() {
-        console.log('DOM loaded, initializing charts...');
-
-        // Функция для инициализации графиков с русской локализацией
-        function initializeChartWithCleanup(chartId, chartData) {
-            if (!chartData) {
-                console.log('No chart data for:', chartId);
-                return;
-            }
-
-            console.log('Initializing chart:', chartId);
-            try {
-                var chart = JSON.parse(chartData);
-                Plotly.newPlot(chartId, chart.data, chart.layout, {
-                    displaylogo: false,
-                    locale: 'ru',
-                    modeBarButtonsToRemove: ['toggleSpikelines', 'hoverClosestCartesian', 'hoverCompareCartesian', 'lasso2d', 'select2d'],
-                    modeBarButtonsToAdd: []
-                }).then(function() {
-                    console.log('Chart initialized successfully:', chartId);
-                    // Удаляем кнопку после создания графика
-                    removePlotlyButton();
-                });
-            } catch (error) {
-                console.error('Error initializing chart ' + chartId + ':', error);
-            }
-        }
-
-        {% if user_chart %}
-            initializeChartWithCleanup('user-chart', '{{ user_chart | safe }}');
-        {% endif %}
-
-        {% if day_chart %}
-            initializeChartWithCleanup('day-chart', '{{ day_chart | safe }}');
-        {% endif %}
-
-        {% if department_chart %}
-            initializeChartWithCleanup('department-chart', '{{ department_chart | safe }}');
-        {% endif %}
-
-        {% if time_chart %}
-            initializeChartWithCleanup('time-chart', '{{ time_chart | safe }}');
-        {% endif %}
-
-        // Периодическая проверка и удаление кнопки (на случай динамической загрузки)
-        setTimeout(removePlotlyButton, 100);
-        setTimeout(removePlotlyButton, 500);
-        setTimeout(removePlotlyButton, 1000);
-
-        // Наблюдатель за изменениями DOM для новых графиков
-        const observer = new MutationObserver(function(mutations) {
-            removePlotlyButton();
-        });
-
-        observer.observe(document.body, { childList: true, subtree: true });
-
-        // Сохранение отдела по умолчанию
-        const saveButton = document.getElementById('save-default-department');
+        // Сохранение локации по умолчанию
+        const saveButton = document.getElementById('save-default-location');
         if (saveButton) {
             saveButton.addEventListener('click', function() {
-                const departmentSelect = document.querySelector('select[name="department"]');
-                const department = departmentSelect.value;
+                const locationSelect = document.querySelector('select[name="location"]');
+                const location = locationSelect.value;
 
-                if (!department) {
-                    alert('Пожалуйста, выберите отдел для сохранения');
+                if (!location) {
+                    alert('Пожалуйста, выберите локацию для сохранения');
                     return;
                 }
 
-                fetch('/save_default_department', {
+                fetch('/save_default_location', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        department: department,
+                        location: location,
                         save_as_default: true
                     })
                 })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        alert('Отдел сохранен как отдел по умолчанию');
+                        alert('Локация сохранена как локация по умолчанию');
                     } else {
-                        alert('Ошибка при сохранении отдела: ' + data.error);
+                        alert('Ошибка при сохранении локации: ' + data.error);
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    alert('Произошла ошибка при сохранении отдела');
+                    alert('Произошла ошибка при сохранении локации');
                 });
             });
         }
