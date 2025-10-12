@@ -735,39 +735,6 @@
             });
         });
 
-        // Обработчик изменения выбора локации
-        document.getElementById('location-select').addEventListener('change', function() {
-            const location = this.value;
-            const saveAsDefaultCheckbox = document.getElementById('save-as-default');
-
-            // Если выбрана локация и чекбокс отмечен, обновляем локацию по умолчанию
-            if (location && saveAsDefaultCheckbox.checked) {
-                fetch('/save_default_location', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        location: location,
-                        save_as_default: true
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Обновляем информацию о локации по умолчанию на странице
-                        const defaultLocInfo = document.querySelector('.list-group-item:last-child .text-muted');
-                        if (defaultLocInfo) {
-                            defaultLocInfo.innerHTML = `<span class="badge bg-success">${location}</span>`;
-                        }
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                });
-            }
-        });
-
         // Инициализация после загрузки flatpickr
         function initAfterFlatpickr() {
             if (window.fp && typeof window.updateSelectedDates === 'function') {
