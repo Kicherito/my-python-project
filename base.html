@@ -626,10 +626,10 @@
 
         /* Улучшенные стили для кнопок дней недели */
         .weekdays-selector .btn-day {
-            padding: 0.4rem 0.6rem;
-            font-size: 0.85rem;
+            padding: 0.5rem 0.75rem;
+            font-size: 1rem;
             font-weight: 500;
-            min-width: 42px;
+            min-width: 46px;
         }
 
         /* Убедимся, что кнопка "Отменить" не переносится */
@@ -649,31 +649,6 @@
         .booking-time i {
             margin-right: 4px;
         }
-               /* Улучшенные стили для кнопок дней недели */
-    .weekdays-selector .btn-day {
-        padding: 0.5rem 0.75rem;
-        font-size: 1rem;
-        font-weight: 500;
-        min-width: 46px;
-    }
-
-    /* Убедимся, что кнопка "Отменить" не переносится */
-    .booking-card .btn {
-        white-space: nowrap;
-    }
-
-    /* Стили для отображения времени брони */
-    .booking-time {
-        font-size: 0.9rem;
-        color: #6c757d;
-        display: flex;
-        align-items: center;
-        margin-top: 4px;
-    }
-
-    .booking-time i {
-        margin-right: 4px;
-    }
     </style>
 </head>
 <body>
@@ -695,38 +670,41 @@
         {% endfor %}
     </div>
 
-    <div class="container">
-        <nav class="navbar">
-            <div class="container-fluid">
-                <a class="navbar-brand" href="/">
-                    <i class="bi bi-building me-2"></i>
-                    Pixel<span>Place</span>
+    <nav class="navbar">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">
+            <i class="bi bi-building me-2"></i>
+            Pixel<span>Place</span>
+        </a>
+        <div class="d-flex">
+            {% if 'username' in session %}
+                <a href="{{ url_for('analytics_dashboard') }}" class="btn btn-outline-primary me-2">
+                    <i class="bi bi-graph-up me-1"></i> Аналитика
                 </a>
-                <div class="d-flex">
-                    {% if 'username' in session %}
-                        <a href="{{ url_for('analytics_dashboard') }}" class="btn btn-outline-primary me-2">
-                            <i class="bi bi-graph-up me-1"></i> Аналитика
-                        </a>
-                        <a href="{{ url_for('schedule') }}" class="btn btn-outline-primary me-2">
-                            <i class="bi bi-calendar-event me-1"></i> Расписание
-                        </a>
-                        <span class="me-3 d-none d-md-block align-self-center">
-                            <i class="bi bi-person-circle me-1"></i> {{ session['username'] }}
-                        </span>
-                        <a href="{{ url_for('logout') }}" class="btn btn-outline-primary">
-                            <i class="bi bi-box-arrow-right"></i> Выйти
-                        </a>
-                    {% else %}
-                        <a href="{{ url_for('login') }}" class="btn btn-outline-primary me-2">
-                            <i class="bi bi-box-arrow-in-right"></i> Войти
-                        </a>
-                        <a href="{{ url_for('register') }}" class="btn btn-primary">
-                            <i class="bi bi-person-plus"></i> Регистрация
-                        </a>
-                    {% endif %}
+                <a href="{{ url_for('schedule') }}" class="btn btn-outline-primary me-2">
+                    <i class="bi bi-calendar-event me-1"></i> Расписание
+                </a>
+                <div class="dropdown me-3">
+                    <a class="btn btn-outline-primary" href="{{ url_for('profile') }}" role="button">
+                        <i class="bi bi-person-circle me-1"></i> {{ session['username'] }}
+                    </a>
                 </div>
-            </div>
-        </nav>
+                <form action="{{ url_for('logout') }}" method="post" style="display: inline;">
+                    <button type="submit" class="btn btn-outline-danger">
+                        <i class="bi bi-box-arrow-right me-1"></i> Выйти
+                    </button>
+                </form>
+            {% else %}
+                <a href="{{ url_for('login') }}" class="btn btn-outline-primary me-2">
+                    <i class="bi bi-box-arrow-in-right"></i> Войти
+                </a>
+                <a href="{{ url_for('register') }}" class="btn btn-primary">
+                    <i class="bi bi-person-plus"></i> Регистрация
+                </a>
+            {% endif %}
+        </div>
+    </div>
+</nav>
 
         {% block content %}{% endblock %}
 
@@ -751,6 +729,84 @@
             duration: 800,
             easing: 'ease-out-quad',
             once: true
+        });
+
+        // Функция для строгого ограничения времени 15-минутными интервалами
+        function enforceStrictTimeIntervals(input) {
+            input.addEventListener('change', function() {
+                const time = this.value;
+                if (time) {
+                    const [hours, minutes] = time.split(':').map(Number);
+
+                    // Принудительно устанавливаем минуты в допустимые значения
+                    let validMinutes = 0;
+                    if (minutes >= 0 && minutes < 7.5) validMinutes = 0;
+                    else if (minutes >= 7.5 && minutes < 22.5) validMinutes = 15;
+                    else if (minutes >= 22.5 && minutes < 37.5) validMinutes = 30;
+                    else if (minutes >= 37.5 && minutes < 52.5) validMinutes = 45;
+                    else validMinutes = 0; // При 52.5-59.9 переходим к следующему часу
+
+                    let finalHours = hours;
+                    let finalMinutes = validMinutes;
+
+                    // Если минуты равны 60, переходим к следующему часу
+                    if (finalMinutes === 60) {
+                        finalHours += 1;
+                        finalMinutes = 0;
+                    }
+
+                    // Форматируем обратно в строку
+                    const formattedTime =
+                        `${finalHours.toString().padStart(2, '0')}:${finalMinutes.toString().padStart(2, '0')}`;
+
+                    // Устанавливаем исправленное значение
+                    this.value = formattedTime;
+                }
+            });
+
+            input.addEventListener('input', function() {
+                const time = this.value;
+                if (time) {
+                    const [hours, minutes] = time.split(':').map(Number);
+                    if (minutes % 15 !== 0) {
+                        this.setCustomValidity('Выберите время с интервалом 15 минут (00, 15, 30, 45)');
+                    } else {
+                        this.setCustomValidity('');
+                    }
+                }
+            });
+
+            // Блокируем ручной ввод
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    const time = this.value;
+                    if (time) {
+                        const [hours, minutes] = time.split(':').map(Number);
+                        const step = e.key === 'ArrowUp' ? 15 : -15;
+                        let newMinutes = minutes + step;
+
+                        if (newMinutes >= 60) {
+                            newMinutes = 0;
+                            hours = hours + 1;
+                        } else if (newMinutes < 0) {
+                            newMinutes = 45;
+                            hours = hours - 1;
+                        }
+
+                        this.value = `${hours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
+                    }
+                }
+            });
+        }
+
+        // Применяем ко всем time inputs при загрузке
+        document.addEventListener('DOMContentLoaded', function() {
+            const timeInputs = document.querySelectorAll('input[type="time"]');
+            timeInputs.forEach(input => {
+                input.step = 900; // 15 минут в секундах
+                enforceStrictTimeIntervals(input);
+            });
         });
 
         document.addEventListener('DOMContentLoaded', function() {

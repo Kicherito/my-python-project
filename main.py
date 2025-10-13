@@ -99,6 +99,70 @@ class UserManager:
             return True
         return False
 
+    def change_password(self, username: str, current_password: str, new_password: str) -> bool:
+        """Изменение пароля пользователя"""
+        user = User.query.filter_by(username=username, password=current_password).first()
+        if user:
+            user.password = new_password
+            db.session.commit()
+            return True
+        return False
+
+    def get_user_stats(self, username: str):
+        """Получить статистику пользователя"""
+        user_obj = User.query.filter_by(username=username).first()
+        if not user_obj:
+            return None
+
+        # Общее количество бронирований
+        total_bookings = Booking.query.filter_by(user_id=user_obj.id).count()
+
+        # Активные бронирования
+        active_bookings = Booking.query.filter(
+            Booking.user_id == user_obj.id,
+            Booking.end_time > datetime.now()
+        ).count()
+
+        # Завершенные бронирования
+        completed_bookings = Booking.query.filter(
+            Booking.user_id == user_obj.id,
+            Booking.end_time <= datetime.now()
+        ).count()
+
+        # Первое бронирование
+        first_booking = Booking.query.filter_by(user_id=user_obj.id).order_by(Booking.start_time.asc()).first()
+        first_booking_date = first_booking.start_time.strftime('%d.%m.%Y') if first_booking else 'Нет'
+
+        # Самая популярная локация
+        from sqlalchemy import func
+        popular_location = db.session.query(
+            Workplace.location,
+            func.count(Booking.id).label('count')
+        ).join(Booking).filter(
+            Booking.user_id == user_obj.id
+        ).group_by(Workplace.location).order_by(func.count(Booking.id).desc()).first()
+
+        # Статистика по месяцам
+        monthly_stats = db.session.query(
+            db.func.extract('month', Booking.start_time).label('month'),
+            db.func.count(Booking.id).label('count')
+        ).filter(
+            Booking.user_id == user_obj.id,
+            Booking.start_time >= datetime.now() - timedelta(days=365)
+        ).group_by('month').all()
+
+        monthly_data = {int(month): count for month, count in monthly_stats}
+
+        return {
+            'total_bookings': total_bookings,
+            'active_bookings': active_bookings,
+            'completed_bookings': completed_bookings,
+            'first_booking_date': first_booking_date,
+            'popular_location': popular_location[0] if popular_location else 'Нет',
+            'member_since': user_obj.id,
+            'monthly_stats': monthly_data
+        }
+
 
 class OfficeBookingSystem:
     def __init__(self):
@@ -633,6 +697,78 @@ def save_default_location():
     return jsonify({'error': 'Failed to save default location'}), 400
 
 
+@app.route('/profile')
+def profile():
+    if 'username' not in session:
+        return redirect(url_for('login'))
+
+    user_obj = User.query.filter_by(username=session['username']).first()
+    user_stats = user_manager.get_user_stats(session['username'])
+    locations = booking_system.get_locations()
+
+    return render_template(
+        'profile.html',
+        username=session['username'],
+        default_location=user_obj.default_location if user_obj else None,
+        has_default_location=user_obj.has_default_location if user_obj else False,
+        user_stats=user_stats,
+        locations=locations
+    )
+
+
+@app.route('/update_default_location', methods=['POST'])
+def update_default_location():
+    if 'username' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    data = request.get_json()
+    location = data.get('location')
+
+    user = User.query.filter_by(username=session['username']).first()
+    if user:
+        user.default_location = location
+        user.has_default_location = bool(location)
+        db.session.commit()
+        session['default_location'] = location
+        session['has_default_location'] = bool(location)
+
+        return jsonify({'success': True, 'message': 'Локация по умолчанию обновлена'})
+
+    return jsonify({'error': 'Пользователь не найден'}), 400
+
+
+@app.route('/change_password', methods=['POST'])
+def change_password():
+    if 'username' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    data = request.get_json()
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+    confirm_password = data.get('confirm_password')
+
+    if not all([current_password, new_password, confirm_password]):
+        return jsonify({'error': 'Все поля обязательны для заполнения'}), 400
+
+    if new_password != confirm_password:
+        return jsonify({'error': 'Новые пароли не совпадают'}), 400
+
+    if len(new_password) < 4:
+        return jsonify({'error': 'Пароль должен содержать минимум 4 символа'}), 400
+
+    if user_manager.change_password(session['username'], current_password, new_password):
+        return jsonify({'success': True, 'message': 'Пароль успешно изменен'})
+    else:
+        return jsonify({'error': 'Текущий пароль неверен'}), 400
+
+
+@app.route('/logout', methods=['POST'])
+def logout():
+    user_manager.logout()
+    flash('Вы вышли из системы', 'success')
+    return redirect(url_for('login'))
+
+
 @app.route('/analytics')
 def analytics_dashboard():
     """Главная страница аналитики"""
@@ -764,15 +900,9 @@ def export_analytics():
     return response
 
 
-@app.route('/logout')
-def logout():
-    user_manager.logout()
-    flash('Вы вышли из системы', 'success')
-    return redirect(url_for('login'))
 
 
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-
     app.run(host='0.0.0.0', port=5000, debug=True)
