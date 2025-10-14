@@ -240,19 +240,86 @@ class OfficeBookingSystem:
         db.session.commit()
         return "Бронирование успешно отменено"
 
-    def show_user_bookings(self, user: str, filter_date=None):
+    def cancel_all_bookings(self, user: str):
+        """Отмена всех бронирований пользователя"""
+        user_obj = User.query.filter_by(username=user).first()
+        if not user_obj:
+            return "Пользователь не найден"
+
+        # Получаем все будущие бронирования пользователя
+        bookings = Booking.query.filter(
+            Booking.user_id == user_obj.id,
+            Booking.end_time > datetime.now()
+        ).all()
+
+        if not bookings:
+            return "Нет активных бронирований для отмены"
+
+        # Удаляем все бронирования
+        for booking in bookings:
+            db.session.delete(booking)
+
+        db.session.commit()
+        return f"Все бронирования успешно отменены ({len(bookings)} шт.)"
+
+    def cancel_bookings_in_range(self, user: str, start_date: str, end_date: str):
+        """Отмена бронирований пользователя в указанном диапазоне дат"""
+        user_obj = User.query.filter_by(username=user).first()
+        if not user_obj:
+            return "Пользователь не найден"
+
+        try:
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)  # включая конечную дату
+        except ValueError:
+            return "Неверный формат даты"
+
+        # Получаем бронирования в указанном диапазоне
+        bookings = Booking.query.filter(
+            Booking.user_id == user_obj.id,
+            Booking.start_time >= start_dt,
+            Booking.start_time < end_dt
+        ).all()
+
+        if not bookings:
+            return "Нет бронирований в указанном диапазоне"
+
+        # Удаляем бронирования
+        for booking in bookings:
+            db.session.delete(booking)
+
+        db.session.commit()
+        return f"Бронирования в диапазоне {start_date} - {end_date} отменены ({len(bookings)} шт.)"
+
+    def show_user_bookings(self, user: str, start_date=None, end_date=None):
         user_obj = User.query.filter_by(username=user).first()
         if not user_obj:
             return []
 
-        # Базовый запрос
-        query = db.session.query(Booking, Workplace).join(Workplace).filter(Booking.user_id == user_obj.id)
+        # Базовый запрос - только будущие бронирования
+        query = db.session.query(Booking, Workplace).join(Workplace).filter(
+            Booking.user_id == user_obj.id,
+            Booking.end_time > datetime.now()  # только будущие брони
+        )
 
-        # Фильтрация по дате
-        if filter_date:
+        # Фильтрация по диапазону дат
+        if start_date and end_date:
             try:
-                filter_date_obj = datetime.strptime(filter_date, '%Y-%m-%d').date()
-                query = query.filter(db.func.date(Booking.start_time) == filter_date_obj)
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)  # включая конечную дату
+                query = query.filter(Booking.start_time >= start_dt, Booking.start_time < end_dt)
+            except ValueError:
+                pass
+        elif start_date:
+            try:
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                query = query.filter(Booking.start_time >= start_dt)
+            except ValueError:
+                pass
+        elif end_date:
+            try:
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+                query = query.filter(Booking.start_time < end_dt)
             except ValueError:
                 pass
 
@@ -271,7 +338,7 @@ class OfficeBookingSystem:
                 'end': booking.end_time.isoformat(),
                 'start_dt': booking.start_time,
                 'end_dt': booking.end_time,
-                'status': 'active' if booking.end_time > datetime.now() else 'completed'
+                'status': 'active'  # теперь все брони активные (будущие)
             })
         return user_bookings
 
@@ -318,8 +385,8 @@ class OfficeBookingSystem:
             location_places[location] = count
         return location_places
 
-    def get_nearest_booking_date(self, user: str):
-        """Получить дату ближайшего бронирования пользователя"""
+    def get_nearest_booking_info(self, user: str):
+        """Получить информацию о ближайшем бронировании пользователя"""
         user_obj = User.query.filter_by(username=user).first()
         if not user_obj:
             return None
@@ -332,7 +399,12 @@ class OfficeBookingSystem:
         ).order_by(Booking.start_time.asc()).first()
 
         if nearest_booking:
-            return nearest_booking.start_time.strftime('%d.%m.%Y')
+            return {
+                'date': nearest_booking.start_time.strftime('%d.%m.%Y'),
+                'time': nearest_booking.start_time.strftime('%H:%M'),
+                'place': nearest_booking.workplace.number,
+                'location': nearest_booking.workplace.location
+            }
         return None
 
 
@@ -529,13 +601,16 @@ def dashboard():
     default_location = user_obj.default_location if user_obj and user_obj.has_default_location else None
     has_default_location = user_obj.has_default_location if user_obj else False
 
-    filter_date = request.args.get('filter_date')
-    user_bookings = booking_system.show_user_bookings(session['username'], filter_date=filter_date)
+    # Получаем параметры фильтрации
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+
+    user_bookings = booking_system.show_user_bookings(session['username'], start_date=start_date, end_date=end_date)
     locations = booking_system.get_locations()
     location_places = booking_system.get_location_places_count()
 
-    # Получаем дату ближайшего бронирования
-    nearest_booking_date = booking_system.get_nearest_booking_date(session['username'])
+    # Получаем информацию о ближайшем бронировании
+    nearest_booking_info = booking_system.get_nearest_booking_info(session['username'])
 
     return render_template(
         'dashboard.html',
@@ -549,9 +624,10 @@ def dashboard():
         min_date=datetime.now().strftime('%Y-%m-%d'),
         max_date=(datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'),
         now=datetime.now(),
-        filter_date=filter_date,
+        start_date=start_date,
+        end_date=end_date,
         location_places=location_places,
-        nearest_booking_date=nearest_booking_date
+        nearest_booking_info=nearest_booking_info
     )
 
 
@@ -600,6 +676,33 @@ def cancel(booking_id):
     result = booking_system.cancel_booking(booking_id)
     flash(result, 'success' if 'успешно' in result else 'error')
 
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/cancel_all_bookings', methods=['POST'])
+def cancel_all_bookings():
+    if 'username' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    result = booking_system.cancel_all_bookings(session['username'])
+    flash(result, 'success' if 'успешно' in result else 'error')
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/cancel_bookings_in_range', methods=['POST'])
+def cancel_bookings_in_range():
+    if 'username' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    start_date = request.form.get('start_date')
+    end_date = request.form.get('end_date')
+
+    if not start_date or not end_date:
+        flash('Укажите начальную и конечную дату диапазона', 'error')
+        return redirect(url_for('dashboard'))
+
+    result = booking_system.cancel_bookings_in_range(session['username'], start_date, end_date)
+    flash(result, 'success' if 'успешно' in result else 'error')
     return redirect(url_for('dashboard'))
 
 
@@ -850,7 +953,7 @@ def export_analytics():
         })
         df_users.to_excel(writer, sheet_name='Статистика по пользователям', index=False)
 
-        # Лист с днями недели
+        # Лист с дням недели
         day_stats = get_day_statistics(bookings)
         df_days = pd.DataFrame(day_stats)
         df_days = df_days.rename(columns={
