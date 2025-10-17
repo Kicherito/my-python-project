@@ -169,10 +169,7 @@ class OfficeBookingSystem:
         self.working_hours = (8, 18)
 
     def is_available(self, place_id: int, start: datetime, end: datetime) -> bool:
-        if not (self.working_hours[0] <= start.hour < self.working_hours[1] and
-                self.working_hours[0] < end.hour <= self.working_hours[1]):
-            return False
-
+        # Убрана проверка рабочего времени - разрешаем бронирование в любое время
         overlapping_bookings = Booking.query.filter(
             Booking.place_id == place_id,
             Booking.start_time < end,
@@ -522,14 +519,22 @@ def get_day_statistics(bookings):
     return [{'day': day, 'count': count} for day, count in day_data.items()]
 
 
-def get_location_statistics(bookings):
-    """Статистика по локациям"""
+def get_location_statistics(bookings, all_locations):
+    """Статистика по локациям - всегда показывает все локации, даже с нулевыми бронированиями"""
     loc_data = {}
+
+    # Инициализируем все локации с нулевыми значениями
+    for location in all_locations:
+        loc_data[location] = 0
+
+    # Заполняем реальными данными
     for booking in bookings:
         location = booking.workplace.location
-        if location not in loc_data:
-            loc_data[location] = 0
-        loc_data[location] += 1
+        if location in loc_data:
+            loc_data[location] += 1
+        else:
+            # На случай, если есть бронирование с локацией, которой нет в all_locations
+            loc_data[location] = 1
 
     return [{'location': loc, 'count': count} for loc, count in loc_data.items()]
 
@@ -685,7 +690,8 @@ def cancel_all_bookings():
         return jsonify({'error': 'Not authenticated'}), 401
 
     result = booking_system.cancel_all_bookings(session['username'])
-    flash(result, 'success' if 'успешно' in result else 'error')
+    flash(result, 'success' if 'успешно'in
+    result else 'error')
     return redirect(url_for('dashboard'))
 
 
@@ -886,27 +892,48 @@ def analytics_dashboard():
     end_date = request.args.get('end_date', default_end.strftime('%Y-%m-%d'))
     location_filter = request.args.get('location', '')
 
-    # Если локация не выбрана, используем локацию по умолчанию из сессии
-    if not location_filter and session.get('default_location'):
+    # Если пользователь явно выбрал "Все локации" (пустая строка), не используем локацию по умолчанию
+    if location_filter == '':
+        pass
+    elif not location_filter and session.get('default_location'):
         location_filter = session['default_location']
 
-    # Преобразуем даты
-    start_dt = datetime.strptime(start_date, '%Y-%m-%d').date() if start_date else default_start.date()
-    end_dt = datetime.strptime(end_date, '%Y-%m-%d').date() if end_date else default_end.date()
+    # Преобразуем даты в datetime объекты для корректного расчета
+    start_dt = datetime.strptime(start_date, '%Y-%m-%d') if start_date else default_start
+    end_dt = datetime.strptime(end_date, '%Y-%m-%d') if end_date else default_end
+
+    # Преобразуем в date для передачи в функции
+    start_dt_date = start_dt.date()
+    end_dt_date = end_dt.date()
 
     # Получаем данные с учетом фильтра по локации
-    bookings = get_booking_stats(start_dt, end_dt, location_filter)
+    bookings_with_filter = get_booking_stats(start_dt_date, end_dt_date, location_filter)
 
-    # Рассчитываем процент занятости
-    occupancy_percentage = get_occupancy_percentage(start_dt, end_dt, location_filter)
+    # Получаем данные БЕЗ фильтра по локации (для статистики по локациям)
+    bookings_all_locations = get_booking_stats(start_dt_date, end_dt_date, None)
+
+    # Рассчитываем процент занятости для выбранной локации (или общего)
+    occupancy_percentage = get_occupancy_percentage(start_dt_date, end_dt_date, location_filter)
+
+    # Получаем количество мест для каждой локации
+    location_places = {}
+    for location in booking_system.get_locations():
+        location_places[location] = Workplace.query.filter_by(location=location).count()
 
     # Подготавливаем данные для статистики
-    user_stats = get_user_statistics(bookings)
-    day_stats = get_day_statistics(bookings)
-    location_stats = get_location_statistics(bookings)
-    time_stats = get_time_statistics(bookings)
+    user_stats = get_user_statistics(bookings_with_filter)
+    day_stats = get_day_statistics(bookings_with_filter)
 
+    # Для статистики по локациям используем ВСЕ бронирования и ВСЕ локации
     locations = booking_system.get_locations()
+    location_stats = get_location_statistics(bookings_all_locations, locations)
+
+    time_stats = get_time_statistics(bookings_with_filter)
+
+    # Получаем информацию о пользователе для чекбокса
+    user_obj = User.query.filter_by(username=session['username']).first()
+    has_default_location = user_obj.has_default_location if user_obj else False
+    default_location = user_obj.default_location if user_obj else None
 
     return render_template('analytics.html',
                            user_stats=user_stats,
@@ -915,10 +942,16 @@ def analytics_dashboard():
                            time_stats=time_stats,
                            start_date=start_date,
                            end_date=end_date,
+                           start_dt=start_dt_date,  # Передаем как date объект
+                           end_dt=end_dt_date,  # Передаем как date объект
                            locations=locations,
                            location_filter=location_filter,
                            occupancy_percentage=occupancy_percentage,
-                           total_bookings=len(bookings))
+                           total_bookings=len(bookings_with_filter),
+                           total_bookings_all=len(bookings_all_locations),
+                           location_places=location_places,
+                           has_default_location=has_default_location,
+                           default_location=default_location)
 
 
 @app.route('/analytics/export')
@@ -963,7 +996,7 @@ def export_analytics():
         df_days.to_excel(writer, sheet_name='Статистика по дням недели', index=False)
 
         # Лист с локациями
-        loc_stats = get_location_statistics(bookings)
+        loc_stats = get_location_statistics(bookings, booking_system.get_locations())
         df_loc = pd.DataFrame(loc_stats)
         df_loc = df_loc.rename(columns={
             'location': 'Локация',
@@ -1003,6 +1036,10 @@ def export_analytics():
     return response
 
 
+# Добавляем функцию в контекст всех шаблонов
+@app.context_processor
+def utility_processor():
+    return dict(get_occupancy_percentage=get_occupancy_percentage)
 
 
 if __name__ == '__main__':

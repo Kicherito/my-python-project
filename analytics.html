@@ -11,6 +11,9 @@
                         <div>
                             <h1 class="h2 mb-1">Аналитика бронирований</h1>
                             <p class="text-muted">Статистика использования рабочих мест</p>
+                            {% if location_filter %}
+                                <span class="badge bg-info">Фильтр активен: {{ location_filter }}</span>
+                            {% endif %}
                         </div>
                         <a href="{{ url_for('export_analytics', start_date=start_date, end_date=end_date, location=location_filter) }}"
                            class="btn btn-success">
@@ -29,7 +32,7 @@
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Локация</label>
-                            <select class="form-select" name="location">
+                            <select class="form-select" name="location" id="location-select-analytics">
                                 <option value="">Все локации</option>
                                 {% for location in locations %}
                                     <option value="{{ location }}"
@@ -46,9 +49,13 @@
 
                     {% if location_filter %}
                     <div class="mt-3">
-                        <button type="button" id="save-default-location" class="btn btn-outline-secondary btn-sm">
-                            <i class="bi bi-star me-1"></i> Сохранить локацию по умолчанию
-                        </button>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="save-as-default-analytics"
+                                   {% if has_default_location and default_location == location_filter %}checked{% endif %}>
+                            <label class="form-check-label" for="save-as-default-analytics">
+                                Использовать "{{ location_filter }}" как локацию по умолчанию
+                            </label>
+                        </div>
                     </div>
                     {% endif %}
                 </div>
@@ -101,30 +108,106 @@
                             <thead>
                                 <tr>
                                     <th>Локация</th>
-                                    <th>Количество бронирований</th>
-                                    <th>Процент от общего числа</th>
+                                    <th>Кол-во мест</th>
+                                    <th>Бронирования</th>
+                                    <th>Доля от всех бронирований</th>
+                                    <th>Процент занятости</th>
+                                    <th>Эффективность</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for location in location_stats %}
                                 <tr>
                                     <td class="fw-bold">{{ location.location }}</td>
+                                    <td>{{ location_places.get(location.location, 0) }}</td>
                                     <td>{{ location.count }}</td>
                                     <td>
-                                        {% if total_bookings > 0 %}
-                                            {{ "%.1f"|format((location.count / total_bookings) * 100) }}%
+                                        {% if total_bookings_all > 0 %}
+                                            {{ "%.1f"|format((location.count / total_bookings_all) * 100) }}%
                                         {% else %}
                                             0%
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% set location_occupancy = get_occupancy_percentage(start_dt, end_dt, location.location) %}
+                                        {{ location_occupancy }}%
+                                        <div class="progress mt-1" style="height: 6px;">
+                                            <div class="progress-bar
+                                                {% if location_occupancy > 80 %}bg-success
+                                                {% elif location_occupancy > 50 %}bg-info
+                                                {% else %}bg-warning{% endif %}"
+                                                 role="progressbar"
+                                                 style="width: {{ location_occupancy }}%"
+                                                 aria-valuenow="{{ location_occupancy }}"
+                                                 aria-valuemin="0"
+                                                 aria-valuemax="100">
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        {% if location_places.get(location.location, 0) > 0 %}
+                                            {{ "%.2f"|format(location.count / location_places.get(location.location, 1)) }}
+                                            <small class="text-muted">броней/место</small>
+                                        {% else %}
+                                            0
                                         {% endif %}
                                     </td>
                                 </tr>
                                 {% else %}
                                 <tr>
-                                    <td colspan="3" class="text-center text-muted py-4">Нет данных за выбранный период</td>
+                                    <td colspan="6" class="text-center text-muted py-4">Нет данных за выбранный период</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
+                            <tfoot>
+                                <tr class="table-info">
+                                    <td><strong>Всего</strong></td>
+                                    <td><strong>{{ location_places.values() | sum }}</strong></td>
+                                    <td><strong>{{ total_bookings_all }}</strong></td>
+                                    <td><strong>100%</strong></td>
+                                    <td><strong>{{ occupancy_percentage }}%</strong></td>
+                                    <td><strong>
+                                        {% if location_places.values() | sum > 0 %}
+                                            {{ "%.2f"|format(total_bookings_all / location_places.values() | sum) }}
+                                        {% else %}
+                                            0
+                                        {% endif %}
+                                    </strong></td>
+                                </tr>
+                            </tfoot>
                         </table>
+                    </div>
+
+                    <!-- Объяснение расчетов -->
+                    <div class="mt-4">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6><i class="bi bi-calculator me-2"></i>Объяснение расчетов:</h6>
+                                <div class="card bg-light">
+                                    <div class="card-body">
+                                        <p><strong>Доля от всех бронирований:</strong><br>
+                                        <small>(Бронирования в локации ÷ Все бронирования) × 100%</small></p>
+
+                                        <p><strong>Процент занятости:</strong><br>
+                                        <small>(Бронирования в локации ÷ (Места в локации × Дни в периоде)) × 100%</small></p>
+
+                                        <p><strong>Эффективность использования:</strong><br>
+                                        <small>Бронирования в локации ÷ Места в локации</small></p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h6><i class="bi bi-graph-up me-2"></i>Как интерпретировать:</h6>
+                                <div class="card bg-light">
+                                    <div class="card-body">
+                                        <p><span class="badge bg-success">Высокая занятость</span> > 80%</p>
+                                        <p><span class="badge bg-info">Средняя занятость</span> 50-80%</p>
+                                        <p><span class="badge bg-warning">Низкая занятость</span> < 50%</p>
+                                        <p><strong>Эффективность:</strong> чем выше, тем лучше используются места</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -137,6 +220,9 @@
             <div class="card">
                 <div class="card-header">
                     <i class="bi bi-calendar-week me-2"></i>Статистика по дням недели
+                    {% if location_filter %}
+                        <span class="badge bg-info ms-2">Фильтр активен: {{ location_filter }}</span>
+                    {% endif %}
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
@@ -180,6 +266,9 @@
             <div class="card">
                 <div class="card-header">
                     <i class="bi bi-people me-2"></i>Детальная статистика по пользователям
+                    {% if location_filter %}
+                        <span class="badge bg-info ms-2">Фильтр активен: {{ location_filter }}</span>
+                    {% endif %}
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
@@ -220,18 +309,21 @@
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Сохранение локации по умолчанию
-        const saveButton = document.getElementById('save-default-location');
-        if (saveButton) {
-            saveButton.addEventListener('click', function() {
-                const locationSelect = document.querySelector('select[name="location"]');
+        // Сохранение локации по умолчанию в аналитике
+        const saveCheckboxAnalytics = document.getElementById('save-as-default-analytics');
+        if (saveCheckboxAnalytics) {
+            saveCheckboxAnalytics.addEventListener('change', function() {
+                const locationSelect = document.getElementById('location-select-analytics');
                 const location = locationSelect.value;
+                const saveAsDefault = this.checked;
 
-                if (!location) {
+                if (saveAsDefault && !location) {
                     alert('Пожалуйста, выберите локацию для сохранения');
+                    this.checked = false;
                     return;
                 }
 
+                // Отправляем запрос на сервер
                 fetch('/save_default_location', {
                     method: 'POST',
                     headers: {
@@ -239,20 +331,36 @@
                     },
                     body: JSON.stringify({
                         location: location,
-                        save_as_default: true
+                        save_as_default: saveAsDefault
                     })
                 })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        alert('Локация сохранена как локация по умолчанию');
+                        // Показываем всплывающее сообщение
+                        const flashContainer = document.querySelector('.alert-flash');
+                        const alertDiv = document.createElement('div');
+                        alertDiv.className = `alert alert-success alert-dismissible fade show`;
+                        alertDiv.innerHTML = `
+                            <i class="bi bi-check-circle me-2"></i>
+                            ${data.message}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        `;
+                        flashContainer.appendChild(alertDiv);
+
+                        // Автоматически закрываем через 5 секунд
+                        setTimeout(() => {
+                            alertDiv.remove();
+                        }, 5000);
                     } else {
                         alert('Ошибка при сохранении локации: ' + data.error);
+                        this.checked = !saveAsDefault;
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
                     alert('Произошла ошибка при сохранении локации');
+                    this.checked = !saveAsDefault;
                 });
             });
         }
