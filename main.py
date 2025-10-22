@@ -33,7 +33,7 @@ class User(db.Model):
 class Workplace(db.Model):
     __tablename__ = 'workplaces'
     id = db.Column(db.Integer, primary_key=True)
-    number = db.Column(db.Integer, nullable=False)
+    number = db.Column(db.String(10), nullable=False)  # String для дробных чисел
     location = db.Column(db.String(100), nullable=False)
     bookings = db.relationship('Booking', backref='workplace', lazy=True)
 
@@ -188,6 +188,10 @@ class OfficeBookingSystem:
         if not user_obj:
             return [("error", "Пользователь не найден")]
 
+        # ПРОВЕРКА: Время начала должно быть меньше времени окончания
+        if start_time >= end_time:
+            return [("error", "Время начала бронирования должно быть раньше времени окончания")]
+
         for date_str in dates:
             try:
                 start_dt = datetime.fromisoformat(f"{date_str}T{start_time}")
@@ -250,7 +254,7 @@ class OfficeBookingSystem:
         ).all()
 
         if not bookings:
-            return "Нет активных бронирований для отмены"
+            return "Нет активных бронирования для отмены"
 
         # Удаляем все бронирования
         for booking in bookings:
@@ -343,7 +347,10 @@ class OfficeBookingSystem:
         available_places = []
 
         # Получаем все места в локации
-        workplaces = Workplace.query.filter_by(location=location).order_by(Workplace.number).all()
+        workplaces = Workplace.query.filter_by(location=location).all()
+
+        # Сортируем места, преобразуя строки в числа для правильной сортировки
+        workplaces.sort(key=lambda x: float(x.number))
 
         for workplace in workplaces:
             is_available_for_all_dates = True
@@ -578,13 +585,19 @@ def login():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        if not all(key in request.form for key in ['username', 'password', 'confirm_password']):
+        if not all(key in request.form for key in ['username', 'password', 'confirm_password', 'codeword']):
             flash('Все поля обязательны для заполнения', 'error')
             return render_template('register.html')
 
         username = request.form['username']
         password = request.form['password']
         confirm_password = request.form['confirm_password']
+        codeword = request.form['codeword']  # Получаем кодовое слово
+
+        # Проверяем кодовое слово (без учета регистра)
+        if codeword.strip().lower() != "парковка":
+            flash('Неверное кодовое слово', 'error')
+            return render_template('register.html')
 
         if password != confirm_password:
             flash('Пароли не совпадают', 'error')
@@ -690,8 +703,7 @@ def cancel_all_bookings():
         return jsonify({'error': 'Not authenticated'}), 401
 
     result = booking_system.cancel_all_bookings(session['username'])
-    flash(result, 'success' if 'успешно'in
-    result else 'error')
+    flash(result, 'success' if 'успешно' in result else 'error')
     return redirect(url_for('dashboard'))
 
 
@@ -708,7 +720,8 @@ def cancel_bookings_in_range():
         return redirect(url_for('dashboard'))
 
     result = booking_system.cancel_bookings_in_range(session['username'], start_date, end_date)
-    flash(result, 'success' if 'успешно' in result else 'error')
+    # ИСПРАВЛЕНИЕ: Всегда показываем успех зеленым цветом при удалении в диапазоне
+    flash(result, 'success')
     return redirect(url_for('dashboard'))
 
 
@@ -769,6 +782,25 @@ def schedule():
     locations = booking_system.get_locations()
     location_places = booking_system.get_location_places_count()
 
+    # Создаем список реальных номеров мест для каждой локации
+    location_places_list = {}
+    for location in locations:
+        # Получаем реальные рабочие места из базы данных
+        workplaces = Workplace.query.filter_by(location=location).all()
+        # Извлекаем номера мест (строки) и сортируем их
+        place_numbers = [wp.number for wp in workplaces]
+        # Сортируем как числа, если это возможно, иначе как строки
+        try:
+            place_numbers.sort(key=lambda x: float(x))
+        except ValueError:
+            place_numbers.sort()
+        location_places_list[location] = place_numbers
+
+    # ДОБАВЛЕНО: Получаем информацию о локации по умолчанию пользователя
+    user_obj = User.query.filter_by(username=session['username']).first()
+    has_default_location = user_obj.has_default_location if user_obj else False
+    default_location = user_obj.default_location if user_obj else None
+
     return render_template('schedule.html',
                            schedule=schedule_data,
                            selected_date=selected_date,
@@ -782,7 +814,10 @@ def schedule():
                            max_date=(datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'),
                            locations=locations,
                            location_filter=location_filter,
-                           location_places=location_places)
+                           location_places=location_places,
+                           location_places_list=location_places_list,
+                           has_default_location=has_default_location,  # ДОБАВЛЕНО
+                           default_location=default_location)  # ДОБАВЛЕНО
 
 
 @app.route('/save_default_location', methods=['POST'])

@@ -31,6 +31,14 @@
                     <option value="{{ location }}" {% if location_filter == location %}selected{% endif %}>{{ location }}</option>
                 {% endfor %}
             </select>
+            <!-- ДОБАВЛЕНО: Чекбокс для сохранения локации по умолчанию -->
+            <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="save-as-default-schedule"
+                       {% if has_default_location and default_location == location_filter %}checked{% endif %}>
+                <label class="form-check-label" for="save-as-default-schedule">
+                    Использовать как локацию по умолчанию
+                </label>
+            </div>
         </div>
 
         <form method="GET" class="d-flex me-2">
@@ -73,11 +81,12 @@
                     <tbody>
                         {% for location in locations %}
                             {% if location_filter == 'all' or location_filter == location %}
-                                {% set max_places = location_places[location] %}
-                                {% for place in range(1, max_places + 1) %}
+                                {% set places_list = location_places_list[location] %}
+                                {% for place in places_list %}
                                     <tr>
-                                        <td class="fw-bold">{{ location }} - Место {{ place }}</td>
+                                        <td class="fw-bold">{{ location }} - {{ place }}</td>
                                         {% for hour in range(working_hours[0], working_hours[1]) %}
+                                            {% set next_hour = hour + 1 %}
                                             {% set hour_start = "%02d:00"|format(hour) %}
                                             {% set hour_end = "%02d:00"|format(hour + 1) %}
                                             {% set is_occupied = false %}
@@ -85,7 +94,7 @@
                                             {% set booking_info = '' %}
 
                                             {% set date_str = selected_date.isoformat() %}
-                                            {% set place_key = location + " - " + place|string %}
+                                            {% set place_key = location + " - " + place %}
                                             {% if schedule[date_str] and schedule[date_str][place_key] %}
                                                 {% set booking = schedule[date_str][place_key] %}
                                                 {% set booking_start = booking.start %}
@@ -142,13 +151,13 @@
                     <tbody>
                         {% for location in locations %}
                             {% if location_filter == 'all' or location_filter == location %}
-                                {% set max_places = location_places[location] %}
-                                {% for place in range(1, max_places + 1) %}
+                                {% set places_list = location_places_list[location] %}
+                                {% for place in places_list %}
                                     <tr>
-                                        <td class="fw-bold">{{ location }} - Место {{ place }}</td>
+                                        <td class="fw-bold">{{ location }} - {{ place }}</td>
                                         {% for day in week_days %}
                                             {% set day_str = day.date.isoformat() %}
-                                            {% set place_key = location + " - " + place|string %}
+                                            {% set place_key = location + " - " + place %}
                                             {% set is_occupied = day.schedule[place_key] is defined %}
                                             {% set booking_user = '' %}
                                             {% set booking_time = '' %}
@@ -206,7 +215,64 @@
         var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
         var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
             return new bootstrap.Tooltip(tooltipTriggerEl)
-        })
+        });
+
+        // Обработчик для чекбокса "Использовать как локацию по умолчанию" в расписании
+        document.getElementById('save-as-default-schedule').addEventListener('change', function() {
+            const locationFilter = document.getElementById('location-filter').value;
+            const saveAsDefault = this.checked;
+
+            if (saveAsDefault && !locationFilter) {
+                alert('Пожалуйста, выберите локацию для сохранения');
+                this.checked = false;
+                return;
+            }
+
+            // Отправляем запрос на сервер
+            fetch('/save_default_location', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    location: locationFilter,
+                    save_as_default: saveAsDefault
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Показываем всплывающее сообщение
+                    const flashContainer = document.querySelector('.alert-flash');
+                    const alertDiv = document.createElement('div');
+                    alertDiv.className = `alert alert-success alert-dismissible fade show`;
+                    alertDiv.innerHTML = `
+                        <i class="bi bi-check-circle me-2"></i>
+                        ${data.message}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    `;
+                    flashContainer.appendChild(alertDiv);
+
+                    // Автоматически закрываем через 5 секунд
+                    setTimeout(() => {
+                        alertDiv.remove();
+                    }, 5000);
+                } else {
+                    alert('Ошибка при сохранении локации: ' + data.error);
+                    this.checked = !saveAsDefault;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Произошла ошибка при сохранении локации');
+                this.checked = !saveAsDefault;
+            });
+        });
+
+        // Сбрасываем чекбокс при изменении локации
+        document.getElementById('location-filter').addEventListener('change', function() {
+            document.getElementById('save-as-default-schedule').checked = false;
+        });
     });
 
     // Функция для применения фильтра по локации
